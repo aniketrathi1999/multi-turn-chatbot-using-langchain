@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Data files
+data/
+
 # Virtual Environment
 .venv/
 venv/
