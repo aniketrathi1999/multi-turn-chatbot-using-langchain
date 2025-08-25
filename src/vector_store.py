@@ -1,8 +1,11 @@
 import os
+from typing import List
 from dotenv import load_dotenv
 from pinecone import Pinecone, ServerlessSpec
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.schema import Document
 
 # Load env vars
 load_dotenv(".env.local")
@@ -17,59 +20,118 @@ def get_pinecone_index():
         
     Raises:
         ValueError: If PINECONE_API_KEY is not set in environment variables
+        RuntimeError: If there's an issue with Pinecone setup or index creation
     """
     api_key = os.getenv("PINECONE_API_KEY")
     if not api_key:
         raise ValueError("PINECONE_API_KEY environment variable not set")
         
-    # Initialize Pinecone client
-    pc = Pinecone(api_key=api_key)
-    
-    # Create index if it doesn't exist
-    if INDEX_NAME not in [index["name"] for index in pc.list_indexes()]:
-        pc.create_index(
-            name=INDEX_NAME,
-            dimension=1536,  # Matches text-embedding-3-small model
-            metric="cosine",  # Best for semantic similarity
-            spec=ServerlessSpec(
-                cloud="aws",
-                region="us-east-1"  # Choose region closest to your users
-            )
-        )
+    try:
+        # Initialize Pinecone client
+        pc = Pinecone(api_key=api_key)
         
-        # Brief pause to ensure index is ready
-        import time
-        time.sleep(10)
+        # List all indexes to verify connection
+        try:
+            existing_indexes = pc.list_indexes()
+            index_names = [index.name for index in existing_indexes]  # Updated for new Pinecone client
+        except Exception as e:
+            raise RuntimeError(f"Failed to list Pinecone indexes. Please check your API key and environment. Error: {str(e)}")
         
-    return pc.Index(INDEX_NAME)
+        # Create index if it doesn't exist
+        if INDEX_NAME not in index_names:
+            try:
+                print(f"Creating new Pinecone index: {INDEX_NAME}")
+                pc.create_index(
+                    name=INDEX_NAME,
+                    dimension=1536,  # Matches text-embedding-3-small model
+                    metric="cosine",  # Best for semantic similarity
+                    spec=ServerlessSpec(
+                        cloud="aws",
+                        region="us-east-1"  # Using us-east-1 as default
+                    )
+                )
+                
+                # Wait for index to be ready
+                print("Waiting for index to be ready...")
+                import time
+                time.sleep(30)  # Increased wait time for index initialization
+                
+            except Exception as e:
+                raise RuntimeError(f"Failed to create Pinecone index. Error: {str(e)}")
+        
+        # Return the index
+        return pc.Index(INDEX_NAME)
+        
+    except Exception as e:
+        raise RuntimeError(f"Pinecone initialization failed: {str(e)}")
 
-def get_vector_store():
+def get_text_splitter(chunk_size: int = 1000, chunk_overlap: int = 200) -> RecursiveCharacterTextSplitter:
+    """Create a text splitter with specified chunk size and overlap.
+    
+    Args:
+        chunk_size: Maximum size of each chunk in characters
+        chunk_overlap: Number of characters to overlap between chunks
+        
+    Returns:
+        Configured RecursiveCharacterTextSplitter instance
+    """
+    return RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        length_function=len,
+        is_separator_regex=False,
+    )
+
+def get_vector_store(chunk_size: int = 1000, chunk_overlap: int = 200):
     """Initialize and return a vector store for document operations.
     
+    Args:
+        chunk_size: Maximum size of each chunk in characters
+        chunk_overlap: Number of characters to overlap between chunks
+        
     Returns:
-        A PineconeVectorStore instance configured for document operations
+        A tuple of (PineconeVectorStore, text_splitter) configured for document operations
         
     Raises:
-        RuntimeError: If there's an issue initializing the vector store
+        RuntimeError: If there's an issue initializing the vector store or creating the index
     """
     try:
-        # Initialize embeddings model
-        embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            openai_api_key=os.getenv("OPENAI_API_KEY")
-        )
+        # Initialize embeddings and text splitter
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        text_splitter = get_text_splitter(chunk_size, chunk_overlap)
         
-        # Get or create the Pinecone index
-        index = get_pinecone_index()
+        # Initialize Pinecone client
+        pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+        
+        # Check if index exists, create if it doesn't
+        try:
+            # First try to get the index to see if it exists
+            index = pc.Index(INDEX_NAME)
+            index.describe_index_stats()  # This will raise an exception if index doesn't exist
+        except Exception:
+            # If index doesn't exist, create it
+            print(f"Index '{INDEX_NAME}' not found. Creating a new index...")
+            pc.create_index(
+                name=INDEX_NAME,
+                dimension=1536,
+                metric="cosine",
+                spec=ServerlessSpec(
+                    cloud="aws",
+                    region="us-east-1"
+                )
+            )
+            print("Waiting for index to be ready...")
+            import time
+            time.sleep(30)  # Wait for index to be ready
         
         # Initialize the vector store
         vector_store = PineconeVectorStore(
-            index=index,
+            index_name=INDEX_NAME,
             embedding=embeddings,
-            text_key="text"  # Field name for document content
+            text_key="text"
         )
         
-        return vector_store
+        return vector_store, text_splitter
         
     except Exception as e:
         raise RuntimeError(f"Failed to initialize vector store: {str(e)}")
