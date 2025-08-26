@@ -76,11 +76,21 @@ def build_graph():
             combine_docs_chain=answer_prompt | llm
         )
 
+        docs_and_scores = vector_store.similarity_search_with_score(question, k=5)
+        top_score = docs_and_scores[0][1] if docs_and_scores else None
+
+        print("########### Docs and Scores #############")
+        print(docs_and_scores)
+        print("########### Docs and Scores #############")
+
         # ✅ invoke the chain
         response = rag_chain.invoke({
             "input": question,
             "chat_history": chat_history_msgs
         })
+        print("########### Response #############")
+        print(response)
+        print("########### Response #############")
 
         raw = response.get("answer") or response.get("output_text") or response
         answer_text = _to_str(raw)
@@ -88,6 +98,7 @@ def build_graph():
         return {
             "answer": answer_text,
             "history": [{"user": question, "bot": answer_text}],
+            "top_score": top_score
         }
 
     graph.add_node("retrieve", retrieve)

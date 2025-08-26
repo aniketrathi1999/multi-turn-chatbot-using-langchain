@@ -10,7 +10,7 @@ from langchain.schema import Document
 # Load env vars
 load_dotenv(".env.local")
 
-INDEX_NAME = "medicines-index"
+INDEX_NAME = os.getenv("MEDICINES_INDEX_NAME")
 
 def get_pinecone_index():
     """Get or create a Pinecone index for vector storage.
