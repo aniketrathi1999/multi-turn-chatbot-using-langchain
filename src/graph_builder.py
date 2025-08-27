@@ -108,21 +108,24 @@ def build_graph():
                 state["pending_options"] = []
             else:
                 # If user typed the label itself, accept it
-                if question in state["pending_options"]:
-                    state["expecting_selection"] = False
-                    state["pending_options"] = []
-                else:
-                    # Re-prompt succinctly (do NOT add complexity)
-                    answer_text = (
-                        "Please reply with **1** or **2**, or type the exact medicine name."
-                    )
-                    return {
-                        "answer": answer_text,
-                        "history": [{"user": state['query'], "bot": answer_text}],
-                        "top_score": None,
-                        "expecting_selection": True,
-                        "pending_options": state["pending_options"],
-                    }
+                question = question.strip()
+                state["expecting_selection"] = False
+                state["pending_options"] = []
+                # if question in state["pending_options"]:
+                #     state["expecting_selection"] = False
+                #     state["pending_options"] = []
+                # else:
+                #     # Re-prompt succinctly (do NOT add complexity)
+                #     answer_text = (
+                #         "Please reply with **1** or **2**, or type the exact medicine name."
+                #     )
+                #     return {
+                #         "answer": answer_text,
+                #         "history": [{"user": state['query'], "bot": answer_text}],
+                #         "top_score": None,
+                #         "expecting_selection": True,
+                #         "pending_options": state["pending_options"],
+                #     }
 
         # Init vector store & retriever (unchanged)
         vector_store, _ = get_vector_store()
